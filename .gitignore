@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+
+# Скомпилированные файлы Go
+*.exe
+*.test
+*.out
+
+# Папка vendor
+vendor/
+
+# Файлы IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Файлы операционной системы
+.DS_Store
+Thumbs.db
