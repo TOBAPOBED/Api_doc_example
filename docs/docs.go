@@ -508,11 +508,11 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/",
-	Schemes:          []string{},
+	Schemes:          []string{"http", "https"},
 	Title:            "Todo API Service",
-	Description:      "Профессионально задокументированный REST API для управления задачами и пользователями, созданный с использованием Go и swaggo.",
+	Description:      "REST API для управления задачами (Todo) и пользователями, написанный на Go. Проект демонстрирует использование swaggo для автоматической генерации Swagger-документации.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

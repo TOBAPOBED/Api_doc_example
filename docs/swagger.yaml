@@ -79,11 +79,11 @@ definitions:
         maxLength: 100
         type: string
     type: object
-host: localhost:8080
 info:
   contact: {}
-  description: Профессионально задокументированный REST API для управления задачами
-    и пользователями, созданный с использованием Go и swaggo.
+  description: REST API для управления задачами (Todo) и пользователями, написанный
+    на Go. Проект демонстрирует использование swaggo для автоматической генерации
+    Swagger-документации.
   title: Todo API Service
   version: "1.0"
 paths:
@@ -339,4 +339,7 @@ paths:
       summary: Обновить пользователя по ID
       tags:
       - Users
+schemes:
+- http
+- https
 swagger: "2.0"

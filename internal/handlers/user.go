@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,16 +37,15 @@ func NewUserHandler() *UserHandler {
 // @Router /api/v1/users [get]
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	var users []models.User
 	for _, user := range h.users {
 		users = append(users, user)
 	}
+	h.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    users,
 	})
@@ -66,7 +66,12 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Неверный ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Неверный формат ID",
+		})
 		return
 	}
 
@@ -75,13 +80,18 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	h.mu.RUnlock()
 
 	if !exists {
-		http.Error(w, "Пользователь не найден", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "Пользователь не найден",
+		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    user,
 	})
@@ -100,7 +110,52 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Невалидный запрос", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Невалидный JSON",
+		})
+		return
+	}
+
+	// Валидация email
+	if req.Email == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Email обязателен",
+		})
+		return
+	}
+	if !strings.Contains(req.Email, "@") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Некорректный формат email",
+		})
+		return
+	}
+
+	// Валидация имени
+	if req.Name == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Name обязателен",
+		})
+		return
+	}
+	if len(req.Name) > 100 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Name не должен превышать 100 символов",
+		})
 		return
 	}
 
@@ -119,7 +174,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    user,
 	})
@@ -141,13 +196,45 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Неверный ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Неверный формат ID",
+		})
 		return
 	}
 
 	var req models.UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Невалидный запрос", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Невалидный JSON",
+		})
+		return
+	}
+
+	// Валидация email
+	if req.Email != nil && !strings.Contains(*req.Email, "@") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Некорректный формат email",
+		})
+		return
+	}
+
+	// Валидация имени
+	if req.Name != nil && len(*req.Name) > 100 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Name не должен превышать 100 символов",
+		})
 		return
 	}
 
@@ -156,7 +243,12 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	user, exists := h.users[id]
 	if !exists {
-		http.Error(w, "Пользователь не найден", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "Пользователь не найден",
+		})
 		return
 	}
 
@@ -171,7 +263,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    user,
 	})
@@ -190,7 +282,12 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Неверный ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Неверный формат ID",
+		})
 		return
 	}
 
@@ -198,7 +295,12 @@ func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.Unlock()
 
 	if _, exists := h.users[id]; !exists {
-		http.Error(w, "Пользователь не найден", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "Пользователь не найден",
+		})
 		return
 	}
 

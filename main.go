@@ -14,12 +14,13 @@ import (
 
 // @title Todo API Service
 // @version 1.0
-// @description Профессионально задокументированный REST API для управления задачами и пользователями.
-// @host localhost:8080
+// @description REST API для управления задачами (Todo) и пользователями, написанный на Go. Проект демонстрирует использование swaggo для автоматической генерации Swagger-документации.
 // @BasePath /
+// @schemes http https
 
 func main() {
 	r := chi.NewRouter()
+
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
@@ -43,22 +44,21 @@ func main() {
 		r.Delete("/{id}", todoHandler.DeleteTodo)
 	})
 
-	// Swagger UI с правильным маршрутом
-	r.Get("/swagger", http.RedirectHandler("/swagger/index.html", http.StatusMovedPermanently).ServeHTTP)
+	// Swagger UI — работает с любым хостом (не привязан к localhost)
 	r.Get("/swagger/*", httpSwagger.Handler(
-		httpSwagger.URL("http://localhost:8080/docs/swagger.json"),
 		httpSwagger.DeepLinking(true),
 		httpSwagger.DocExpansion("list"),
 	))
 
-	// Swagger JSON
+	// Раздача swagger.json — работает локально и на сервере
 	r.Get("/docs/swagger.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		http.ServeFile(w, r, "./docs/swagger.json")
 	})
 
 	log.Println("✅ Сервер запущен: http://localhost:8080")
-	log.Println("✅ Swagger UI: http://localhost:8080/swagger")
-	log.Println("✅ API Docs JSON: http://localhost:8080/docs/swagger.json")
+	log.Println("✅ Swagger UI: http://localhost:8080/swagger/index.html")
+	log.Println("✅ API JSON: http://localhost:8080/docs/swagger.json")
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatal(err)

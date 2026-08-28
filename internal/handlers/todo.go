@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +14,7 @@ import (
 )
 
 type TodoHandler struct {
+	mu     sync.RWMutex
 	todos  map[int]models.Todo
 	nextID int
 }
@@ -33,14 +35,16 @@ func NewTodoHandler() *TodoHandler {
 // @Success 200 {object} models.SuccessResponse "Список задач успешно получен"
 // @Router /api/v1/todos [get]
 func (h *TodoHandler) ListTodos(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
 	var todos []models.Todo
 	for _, todo := range h.todos {
 		todos = append(todos, todo)
 	}
+	h.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    todos,
 	})
@@ -61,19 +65,32 @@ func (h *TodoHandler) GetTodo(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Неверный ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Неверный формат ID",
+		})
 		return
 	}
 
+	h.mu.RLock()
 	todo, exists := h.todos[id]
+	h.mu.RUnlock()
+
 	if !exists {
-		http.Error(w, "Задача не найдена", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "Задача не найдена",
+		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    todo,
 	})
@@ -92,10 +109,45 @@ func (h *TodoHandler) GetTodo(w http.ResponseWriter, r *http.Request) {
 func (h *TodoHandler) CreateTodo(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateTodoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Невалидный запрос", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Невалидный JSON",
+		})
 		return
 	}
 
+	// Валидация
+	if req.Title == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Title обязателен",
+		})
+		return
+	}
+	if len(req.Title) > 200 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Title не должен превышать 200 символов",
+		})
+		return
+	}
+	if len(req.Description) > 1000 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Description не должен превышать 1000 символов",
+		})
+		return
+	}
+
+	h.mu.Lock()
 	todo := models.Todo{
 		ID:          h.nextID,
 		UserID:      req.UserID,
@@ -107,12 +159,13 @@ func (h *TodoHandler) CreateTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	h.todos[h.nextID] = todo
 	h.nextID++
+	h.mu.Unlock()
 
 	log.Printf("Создана новая задача: %+v", todo)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    todo,
 	})
@@ -134,19 +187,57 @@ func (h *TodoHandler) UpdateTodo(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Неверный ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Неверный формат ID",
+		})
 		return
 	}
 
 	var req models.UpdateTodoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Невалидный запрос", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Невалидный JSON",
+		})
 		return
 	}
 
+	// Валидация
+	if req.Title != nil && len(*req.Title) > 200 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Title не должен превышать 200 символов",
+		})
+		return
+	}
+	if req.Description != nil && len(*req.Description) > 1000 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Description не должен превышать 1000 символов",
+		})
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	todo, exists := h.todos[id]
 	if !exists {
-		http.Error(w, "Задача не найдена", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "Задача не найдена",
+		})
 		return
 	}
 
@@ -165,7 +256,7 @@ func (h *TodoHandler) UpdateTodo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(models.SuccessResponse{
+	json.NewEncoder(w).Encode(models.SuccessResponse{
 		Success: true,
 		Data:    todo,
 	})
@@ -184,12 +275,25 @@ func (h *TodoHandler) DeleteTodo(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "Неверный ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Неверный формат ID",
+		})
 		return
 	}
 
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if _, exists := h.todos[id]; !exists {
-		http.Error(w, "Задача не найдена", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "Задача не найдена",
+		})
 		return
 	}
 
